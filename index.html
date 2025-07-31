@@ -312,33 +312,44 @@
     }
 
     function getWinnerFromAngle(finalAngle, segments) {
-      // A seta aponta para o topo (posição 12h = 0 radianos)
-      // Normalizar ângulo da rotação
-      const normalizedAngle = ((finalAngle % 360) + 360) % 360;
-      
-      // Converter para radianos e ajustar para que 0° = topo
-      // Como começamos desenhando do topo e vamos no sentido horário
-      const targetAngle = (normalizedAngle * Math.PI) / 180;
-      
-      // Debug: mostrar informações
-      console.log('Ângulo final:', finalAngle);
-      console.log('Ângulo normalizado:', normalizedAngle);
-      console.log('Target angle (rad):', targetAngle);
-      
-      // Encontrar qual segmento contém este ângulo
-      for (let i = 0; i < segments.length; i++) {
-        const segment = segments[i];
-        let start = segment.startAngle;
-        let end = segment.endAngle;
-        
-        console.log(`Segmento ${segment.name}: ${start} - ${end} rad`);
-        
-        // Verificar se o ângulo está dentro deste segmento
-        if (targetAngle >= start && targetAngle < end) {
-          console.log('Vencedor encontrado:', segment.name);
-          return segment.name;
-        }
-      }
+  // A seta está no topo (posição 12h), ou seja, -90 graus
+  const normalizedAngle = ((finalAngle % 360) + 360) % 360;
+  
+  // Ajustar ângulo para refletir posição do ponteiro
+  // Como 0 graus no canvas é posição 3h, e queremos posição 12h (-90° ou 270°)
+  let adjustedAngleDeg = (360 - normalizedAngle + 90) % 360;
+  let adjustedAngleRad = (adjustedAngleDeg * Math.PI) / 180;
+
+  // Debug
+  console.log('Final angle (deg):', finalAngle);
+  console.log('Normalized angle (deg):', normalizedAngle);
+  console.log('Adjusted angle (deg):', adjustedAngleDeg);
+  console.log('Adjusted angle (rad):', adjustedAngleRad);
+
+  for (let segment of segments) {
+    if (adjustedAngleRad >= segment.startAngle && adjustedAngleRad < segment.endAngle) {
+      console.log('🎯 Vencedor encontrado:', segment.name);
+      return segment.name;
+    }
+  }
+
+  // Se não encontrou por erro de arredondamento, retorna o mais próximo
+  let closest = segments[0];
+  let minDiff = Math.PI * 2;
+
+  for (let segment of segments) {
+    const mid = (segment.startAngle + segment.endAngle) / 2;
+    const diff = Math.abs(adjustedAngleRad - mid);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = segment;
+    }
+  }
+
+  console.log('⚠️ Vencedor por aproximação:', closest.name);
+  return closest.name;
+}
+
       
       // Se não encontrou (problema de precisão), pegar o mais próximo
       let closestSegment = segments[0];
