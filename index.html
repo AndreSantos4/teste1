@@ -242,7 +242,12 @@
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      segments.forEach(segment => {
+      // Debug: mostrar ângulos dos segmentos
+      console.log('=== SEGMENTOS DA ROLETA ===');
+      
+      segments.forEach((segment, index) => {
+        console.log(`${index}: ${segment.name} - ${segment.startAngle.toFixed(3)} a ${segment.endAngle.toFixed(3)} rad`);
+        
         // Desenhar setor
         ctx.beginPath();
         ctx.moveTo(radius, radius);
@@ -296,26 +301,60 @@
       ctx.strokeStyle = '#333';
       ctx.lineWidth = 3;
       ctx.stroke();
+      
+      // Debug: desenhar linha da seta para facilitar visualização
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(radius, 0);
+      ctx.lineTo(radius, 50);
+      ctx.stroke();
     }
 
     function getWinnerFromAngle(finalAngle, segments) {
-      // Normalizar ângulo para 0-360
+      // A seta aponta para o topo (posição 12h = 0 radianos)
+      // Normalizar ângulo da rotação
       const normalizedAngle = ((finalAngle % 360) + 360) % 360;
-      // Converter para radianos
-      const angleRadians = (normalizedAngle * Math.PI) / 180;
       
-      // A seta aponta para cima (0 radianos), então precisamos ajustar
-      // Como a roleta gira no sentido horário, invertemos o ângulo
-      const adjustedAngle = (2 * Math.PI - angleRadians) % (2 * Math.PI);
+      // Converter para radianos e ajustar para que 0° = topo
+      // Como começamos desenhando do topo e vamos no sentido horário
+      const targetAngle = (normalizedAngle * Math.PI) / 180;
       
-      for (let segment of segments) {
-        if (adjustedAngle >= segment.startAngle && adjustedAngle < segment.endAngle) {
+      // Debug: mostrar informações
+      console.log('Ângulo final:', finalAngle);
+      console.log('Ângulo normalizado:', normalizedAngle);
+      console.log('Target angle (rad):', targetAngle);
+      
+      // Encontrar qual segmento contém este ângulo
+      for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i];
+        let start = segment.startAngle;
+        let end = segment.endAngle;
+        
+        console.log(`Segmento ${segment.name}: ${start} - ${end} rad`);
+        
+        // Verificar se o ângulo está dentro deste segmento
+        if (targetAngle >= start && targetAngle < end) {
+          console.log('Vencedor encontrado:', segment.name);
           return segment.name;
         }
       }
       
-      // Fallback - retorna o primeiro segmento
-      return segments[0]?.name || 'Erro';
+      // Se não encontrou (problema de precisão), pegar o mais próximo
+      let closestSegment = segments[0];
+      let minDistance = Math.PI * 2;
+      
+      for (let segment of segments) {
+        const midAngle = (segment.startAngle + segment.endAngle) / 2;
+        const distance = Math.abs(targetAngle - midAngle);
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestSegment = segment;
+        }
+      }
+      
+      console.log('Vencedor por proximidade:', closestSegment.name);
+      return closestSegment.name;
     }
 
     function spinWheel() {
