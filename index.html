@@ -397,7 +397,11 @@
         
         // Processar dados do Google Sheets
         if (data.table && data.table.rows) {
-          for (let i = 1; i < data.table.rows.length; i++) { // Pular cabeçalho
+          // Verificar se há cabeçalho baseado nos labels das colunas
+          const hasHeaders = data.table.cols.some(col => col.label && col.label.trim() !== '');
+          const startIndex = hasHeaders ? 1 : 0; // Se há cabeçalho, pula primeira linha
+          
+          for (let i = startIndex; i < data.table.rows.length; i++) {
             const row = data.table.rows[i];
             const name = row.c[0]?.v; // Coluna A
             const count = parseInt(row.c[1]?.v) || 1; // Coluna B (padrão 1)
