@@ -350,24 +350,6 @@
   return closest.name;
 }
 
-      
-      // Se não encontrou (problema de precisão), pegar o mais próximo
-      let closestSegment = segments[0];
-      let minDistance = Math.PI * 2;
-      
-      for (let segment of segments) {
-        const midAngle = (segment.startAngle + segment.endAngle) / 2;
-        const distance = Math.abs(targetAngle - midAngle);
-        if (distance < minDistance) {
-          minDistance = distance;
-          closestSegment = segment;
-        }
-      }
-      
-      console.log('Vencedor por proximidade:', closestSegment.name);
-      return closestSegment.name;
-    }
-
     function spinWheel() {
       if (spinning || wheelSegments.length === 0) return;
       
