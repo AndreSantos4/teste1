@@ -103,6 +103,19 @@
       border-radius: 10px;
       margin: 10px 0;
     }
+
+    .controls {
+      margin: 20px 0;
+    }
+
+    .volume-control {
+      margin: 10px;
+    }
+
+    .volume-control input {
+      width: 100px;
+      margin: 0 10px;
+    }
   </style>
 </head>
 <body>
@@ -115,13 +128,18 @@
     <canvas id="wheel" width="400" height="400"></canvas>
   </div>
   
-  <button id="spinBtn" disabled>Girar Roleta</button>
+  <div class="controls">
+    <button id="spinBtn" disabled>🎲 Girar Roleta</button>
+    <div class="volume-control">
+      🔊 <input type="range" id="volumeSlider" min="0" max="100" value="50"> <span id="volumeValue">50%</span>
+    </div>
+  </div>
+  
   <div id="winner"></div>
 
   <script>
     // IMPORTANTE: Substitua pela URL da sua planilha
     const SHEET_ID = '1yo6JgIHzA-p67IneR1Hu767id7rFOctmlxbnf9vnFbg';
-    // Usando JSONP para evitar problemas de CORS
     const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
 
     const canvas = document.getElementById('wheel');
@@ -129,7 +147,8 @@
     const radius = canvas.width / 2;
     let currentRotation = 0;
     let spinning = false;
-    let participants = [];
+    let wheelSegments = []; // Array com {name, weight, startAngle, endAngle}
+    let volume = 0.5;
 
     // Cores vibrantes para a roleta
     const colors = [
@@ -138,22 +157,97 @@
       '#F8C471', '#82E0AA', '#F1948A', '#85C1E9', '#D2B4DE'
     ];
 
-    function drawWheel(participantsList) {
-      const total = participantsList.length;
-      if (total === 0) return;
+    // Sistema de som usando Web Audio API
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    let isAudioEnabled = false;
 
-      const angleStep = (2 * Math.PI) / total;
+    function enableAudio() {
+      if (!isAudioEnabled) {
+        audioContext.resume();
+        isAudioEnabled = true;
+      }
+    }
+
+    function playTone(frequency, duration, type = 'sine') {
+      enableAudio();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+      oscillator.type = type;
+      
+      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+      gainNode.gain.linearRampToValueAtTime(volume * 0.3, audioContext.currentTime + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
+      
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + duration);
+    }
+
+    function playSpinSound() {
+      // Som de rotação - frequência variável
+      for (let i = 0; i < 10; i++) {
+        setTimeout(() => {
+          playTone(200 + Math.random() * 100, 0.1, 'sawtooth');
+        }, i * 100);
+      }
+    }
+
+    function playWinSound() {
+      // Som de vitória - acordes ascendentes
+      const notes = [523, 659, 784, 1047]; // Dó, Mi, Sol, Dó oitava
+      notes.forEach((note, i) => {
+        setTimeout(() => {
+          playTone(note, 0.5);
+        }, i * 150);
+      });
+    }
+
+    function playTickSound() {
+      playTone(800, 0.05, 'square');
+    }
+
+    function processParticipants(rawParticipants) {
+      // Agrupar participantes por nome e somar pesos
+      const participantMap = {};
+      rawParticipants.forEach(name => {
+        participantMap[name] = (participantMap[name] || 0) + 1;
+      });
+
+      // Converter para array de segmentos
+      const segments = [];
+      const totalWeight = rawParticipants.length;
+      let currentAngle = 0;
+
+      Object.entries(participantMap).forEach(([name, weight], index) => {
+        const segmentAngle = (weight / totalWeight) * 2 * Math.PI;
+        segments.push({
+          name: name,
+          weight: weight,
+          startAngle: currentAngle,
+          endAngle: currentAngle + segmentAngle,
+          color: colors[index % colors.length]
+        });
+        currentAngle += segmentAngle;
+      });
+
+      return segments;
+    }
+
+    function drawWheel(segments) {
+      if (segments.length === 0) return;
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      for (let i = 0; i < total; i++) {
-        const startAngle = i * angleStep;
-        const endAngle = startAngle + angleStep;
-
+      segments.forEach(segment => {
         // Desenhar setor
         ctx.beginPath();
         ctx.moveTo(radius, radius);
-        ctx.arc(radius, radius, radius - 10, startAngle, endAngle);
-        ctx.fillStyle = colors[i % colors.length];
+        ctx.arc(radius, radius, radius - 10, segment.startAngle, segment.endAngle);
+        ctx.fillStyle = segment.color;
         ctx.fill();
         
         // Borda do setor
@@ -164,19 +258,35 @@
         // Texto
         ctx.save();
         ctx.translate(radius, radius);
-        ctx.rotate(startAngle + angleStep / 2);
+        
+        const midAngle = (segment.startAngle + segment.endAngle) / 2;
+        ctx.rotate(midAngle);
+        
         ctx.textAlign = "right";
         ctx.fillStyle = "#000";
-        ctx.font = "bold 14px Arial";
+        ctx.font = "bold 16px Arial";
         ctx.shadowColor = "rgba(255,255,255,0.8)";
         ctx.shadowBlur = 2;
         
-        const name = participantsList[i];
-        const maxLength = 12;
-        const displayName = name.length > maxLength ? name.substring(0, maxLength) + "..." : name;
-        ctx.fillText(displayName, radius - 20, 5);
+        // Ajustar tamanho da fonte baseado no tamanho do segmento
+        const segmentSize = segment.endAngle - segment.startAngle;
+        const fontSize = Math.max(10, Math.min(20, segmentSize * 50));
+        ctx.font = `bold ${fontSize}px Arial`;
+        
+        const maxLength = Math.floor(segmentSize * 20);
+        let displayName = segment.name;
+        if (displayName.length > maxLength) {
+          displayName = displayName.substring(0, maxLength) + "...";
+        }
+        
+        // Mostrar peso se maior que 1
+        if (segment.weight > 1) {
+          displayName += ` (${segment.weight}x)`;
+        }
+        
+        ctx.fillText(displayName, radius - 15, 5);
         ctx.restore();
-      }
+      });
 
       // Círculo central
       ctx.beginPath();
@@ -188,22 +298,45 @@
       ctx.stroke();
     }
 
+    function getWinnerFromAngle(finalAngle, segments) {
+      // Normalizar ângulo para 0-360
+      const normalizedAngle = ((finalAngle % 360) + 360) % 360;
+      // Converter para radianos
+      const angleRadians = (normalizedAngle * Math.PI) / 180;
+      
+      // A seta aponta para cima (0 radianos), então precisamos ajustar
+      // Como a roleta gira no sentido horário, invertemos o ângulo
+      const adjustedAngle = (2 * Math.PI - angleRadians) % (2 * Math.PI);
+      
+      for (let segment of segments) {
+        if (adjustedAngle >= segment.startAngle && adjustedAngle < segment.endAngle) {
+          return segment.name;
+        }
+      }
+      
+      // Fallback - retorna o primeiro segmento
+      return segments[0]?.name || 'Erro';
+    }
+
     function spinWheel() {
-      if (spinning || participants.length === 0) return;
+      if (spinning || wheelSegments.length === 0) return;
       
       spinning = true;
       document.getElementById('spinBtn').disabled = true;
       document.getElementById('winner').innerText = '';
+
+      playSpinSound();
 
       // Rotação aleatória (múltiplas voltas + ângulo final)
       const minSpins = 5;
       const maxSpins = 8;
       const spins = minSpins + Math.random() * (maxSpins - minSpins);
       const finalAngle = Math.random() * 360;
-      const totalRotation = spins * 360 + finalAngle;
+      const totalRotation = currentRotation + spins * 360 + finalAngle;
 
       let startTime = null;
       const duration = 4000; // 4 segundos
+      let lastTickAngle = 0;
 
       function animate(currentTime) {
         if (!startTime) startTime = currentTime;
@@ -212,21 +345,30 @@
         
         // Easing para desaceleração suave
         const eased = 1 - Math.pow(1 - progress, 3);
-        const rotation = totalRotation * eased;
+        const rotation = currentRotation + (totalRotation - currentRotation) * eased;
         
         canvas.style.transform = `rotate(${rotation}deg)`;
+
+        // Som de tick baseado na rotação
+        const tickAngle = Math.floor(rotation / 15); // Tick a cada 15 graus
+        if (tickAngle !== lastTickAngle && elapsed > 500) {
+          playTickSound();
+          lastTickAngle = tickAngle;
+        }
 
         if (progress < 1) {
           requestAnimationFrame(animate);
         } else {
-          // Calcular vencedor
-          const normalizedAngle = (360 - (rotation % 360)) % 360;
-          const sectorAngle = 360 / participants.length;
-          const winnerIndex = Math.floor(normalizedAngle / sectorAngle) % participants.length;
+          currentRotation = rotation;
+          
+          // Calcular vencedor baseado na posição final
+          const winner = getWinnerFromAngle(rotation, wheelSegments);
           
           document.getElementById('winner').innerHTML = `
-            🎉 <strong>Vencedor: ${participants[winnerIndex]}</strong> 🎉
+            🎉 <strong>Vencedor: ${winner}</strong> 🎉
           `;
+          
+          playWinSound();
           
           spinning = false;
           document.getElementById('spinBtn').disabled = false;
@@ -251,7 +393,7 @@
         const jsonText = text.substring(47).slice(0, -2);
         const data = JSON.parse(jsonText);
         
-        participants = [];
+        const rawParticipants = [];
         
         // Processar dados do Google Sheets
         if (data.table && data.table.rows) {
@@ -262,19 +404,25 @@
             
             if (name && name.trim()) {
               for (let j = 0; j < count; j++) {
-                participants.push(name.trim());
+                rawParticipants.push(name.trim());
               }
             }
           }
         }
 
-        if (participants.length === 0) {
+        if (rawParticipants.length === 0) {
           throw new Error('Nenhum participante encontrado na planilha');
         }
 
-        document.getElementById('status').innerText = `${participants.length} participantes carregados`;
+        wheelSegments = processParticipants(rawParticipants);
+        
+        const uniqueCount = wheelSegments.length;
+        const totalEntries = rawParticipants.length;
+        
+        document.getElementById('status').innerText = 
+          `${uniqueCount} participantes (${totalEntries} entradas total)`;
         document.getElementById('spinBtn').disabled = false;
-        drawWheel(participants);
+        drawWheel(wheelSegments);
         
       } catch (error) {
         console.error('Erro ao carregar participantes:', error);
@@ -286,20 +434,32 @@
         `;
         
         // Fallback: usar dados de exemplo
-        participants = ['João', 'Maria', 'Pedro', 'Ana', 'Carlos'];
+        const fallbackData = [
+          'João', 'João', 'Maria', 'Pedro', 'Pedro', 'Pedro', 'Ana', 'Carlos'
+        ];
+        wheelSegments = processParticipants(fallbackData);
         document.getElementById('status').innerText = 'Usando dados de exemplo (erro ao carregar planilha)';
         document.getElementById('spinBtn').disabled = false;
-        drawWheel(participants);
+        drawWheel(wheelSegments);
       }
     }
 
     // Event listeners
     document.getElementById('spinBtn').addEventListener('click', spinWheel);
 
+    // Controle de volume
+    const volumeSlider = document.getElementById('volumeSlider');
+    const volumeValue = document.getElementById('volumeValue');
+
+    volumeSlider.addEventListener('input', (e) => {
+      volume = e.target.value / 100;
+      volumeValue.textContent = e.target.value + '%';
+    });
+
     // Carregar participantes ao iniciar
     loadParticipants();
 
-    // Recarregar a cada 30 segundos (opcional)
+    // Recarregar a cada 30 segundos
     setInterval(loadParticipants, 30000);
   </script>
 </body>
